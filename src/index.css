@@ -1,1 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
+@layer base {
+  body {
+    @apply font-sans bg-gray-50 text-gray-900;
+  }
+
+  * {
+    @apply box-border;
+  }
+}
+
+@layer components {
+  /* Modern scrollbar styling */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-400 rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-500;
+  }
+
+  /* Photo grid layout - Google Photos style */
+  .photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 4px;
+    padding: 8px;
+  }
+
+  .photo-card {
+    @apply relative aspect-square overflow-hidden rounded-sm cursor-pointer;
+    @apply bg-gray-200 transition-all duration-200;
+  }
+
+  .photo-card:hover {
+    @apply shadow-lg transform scale-[1.02] z-10;
+  }
+
+  .photo-card img, .photo-card video {
+    @apply w-full h-full object-cover;
+  }
+
+  /* Sidebar styling */
+  .sidebar {
+    @apply fixed left-0 top-0 h-full bg-white shadow-lg;
+    @apply transition-transform duration-300 ease-in-out z-40;
+  }
+
+  .sidebar.collapsed {
+    @apply -translate-x-full;
+  }
+
+  /* Modern card styling */
+  .modern-card {
+    @apply bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300;
+  }
+
+  /* Loading skeleton */
+  .skeleton {
+    @apply animate-pulse bg-gray-200 rounded;
+  }
+
+  /* Toast notification customization */
+  .Toastify__toast {
+    @apply font-sans;
+  }
+}
+
+/* Legacy styles fallback */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+}

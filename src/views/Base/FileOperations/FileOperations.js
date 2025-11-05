@@ -94,7 +94,16 @@ class FileOperations extends React.Component {
 
 	handleChangeGridMode = () => {
 		const {gridMode, changeGridMode, containerID} = this.props;
-		changeGridMode(containerID, gridMode === "list" ? "card" : "list");
+		// Cycle through three view modes: list -> card -> photo -> list
+		let nextMode = "list";
+		if (gridMode === "list") {
+			nextMode = "card";
+		} else if (gridMode === "card") {
+			nextMode = "photo";
+		} else {
+			nextMode = "list";
+		}
+		changeGridMode(containerID, nextMode);
 	};
 
 	changeSearch = (e) => {
@@ -256,10 +265,10 @@ class FileOperations extends React.Component {
 
 					<Button className="btn-explorer-action" id="ListViewButton"
 							onClick={this.handleChangeGridMode}>
-						<i className={"fa fa-lg " + (gridMode === "card" ? "fa-list" : "fa-th-large")}/>
+						<i className={"fa fa-lg " + (gridMode === "list" ? "fa-th-large" : gridMode === "card" ? "fa-image" : "fa-list")}/>
 					</Button>
 					<UncontrolledTooltip placement="right" target="ListViewButton">
-						{(gridMode === "card" ? "List View" : "Card View")}
+						{gridMode === "list" ? "Card View" : gridMode === "card" ? "Photo View" : "List View"}
 					</UncontrolledTooltip>
 
 					<Button className="btn-explorer-action" id="InfoButton"
