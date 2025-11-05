@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Localstack - Mock AWS S3 for testing
   localstack:

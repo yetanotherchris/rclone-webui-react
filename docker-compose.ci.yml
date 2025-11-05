@@ -1,8 +1,6 @@
 # Docker Compose override for CI environments (GitHub Actions)
 # This file simplifies the LocalStack configuration for CI
 
-version: '3.8'
-
 services:
   # Override localstack for CI - simplified configuration with stable version
   localstack:
@@ -14,14 +12,10 @@ services:
       - SKIP_SSL_CERT_DOWNLOAD=1
       - EAGER_SERVICE_LOADING=1
       - LOCALSTACK_HOST=localhost:4566
-      # Use different data directory to avoid volume mount conflict
-      - DATA_DIR=/var/lib/localstack
-    # Use tmpfs at /var/lib/localstack instead of /tmp/localstack
-    # This avoids conflict with the volume mount from base compose file
-    tmpfs:
-      - /var/lib/localstack
-    # Keep volumes empty to avoid additional mounts
-    volumes: []
+    # Override volume mount to use tmpfs (/dev/shm) instead of ./localstack-data
+    # This prevents "device busy" errors when LocalStack tries to clean /tmp/localstack
+    volumes:
+      - /dev/shm:/tmp/localstack
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 5s
