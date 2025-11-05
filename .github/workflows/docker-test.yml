@@ -1,0 +1,116 @@
+name: Docker Compose Test
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  docker-test:
+    name: Test Docker Compose Setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create rclone.conf for testing
+        run: |
+          cat > rclone.conf << 'EOF'
+          [s3-local]
+          type = s3
+          provider = Other
+          access_key_id = test
+          secret_access_key = test
+          endpoint = http://localstack:4566
+          force_path_style = true
+          EOF
+
+      - name: Create test-data directory
+        run: mkdir -p test-data
+
+      - name: Build Docker images
+        run: docker compose build --no-cache
+
+      - name: Start Docker Compose services
+        run: docker compose up -d
+
+      - name: Wait for LocalStack to be ready
+        run: |
+          echo "Waiting for LocalStack to be healthy..."
+          timeout 60 bash -c 'until docker compose exec -T localstack curl -f http://localhost:4566/_localstack/health; do sleep 2; done'
+
+      - name: Wait for Rclone to be ready
+        run: |
+          echo "Waiting for Rclone daemon to be ready..."
+          timeout 60 bash -c 'until curl -f -u admin:password http://localhost:5572/core/version; do sleep 2; done'
+
+      - name: Wait for WebUI to be ready
+        run: |
+          echo "Waiting for WebUI to be ready..."
+          timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done'
+
+      - name: Test Rclone API
+        run: |
+          echo "Testing Rclone API version endpoint..."
+          curl -f -u admin:password http://localhost:5572/core/version | jq .
+
+      - name: Test S3 bucket creation
+        run: |
+          echo "Testing S3 bucket listing..."
+          docker compose run --rm -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test -e AWS_DEFAULT_REGION=us-east-1 \
+            init-s3 aws --endpoint-url=http://localstack:4566 s3 ls
+
+      - name: Test WebUI accessibility
+        run: |
+          echo "Testing WebUI is serving content..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000)
+          if [ "$response" = "200" ]; then
+            echo "✓ WebUI is accessible (HTTP $response)"
+          else
+            echo "✗ WebUI returned HTTP $response"
+            exit 1
+          fi
+
+      - name: Verify Docker containers are running
+        run: |
+          echo "Checking all containers are running..."
+          docker compose ps
+
+          # Check each service is running
+          services=("localstack" "rclone" "webui")
+          for service in "${services[@]}"; do
+            if docker compose ps "$service" | grep -q "Up"; then
+              echo "✓ $service is running"
+            else
+              echo "✗ $service is not running"
+              exit 1
+            fi
+          done
+
+      - name: Show Docker logs on failure
+        if: failure()
+        run: |
+          echo "=== Docker Compose logs ==="
+          docker compose logs
+          echo "=== Container status ==="
+          docker compose ps -a
+
+      - name: Stop Docker Compose services
+        if: always()
+        run: docker compose down -v
+
+      - name: Clean up Docker resources
+        if: always()
+        run: |
+          docker system prune -f
+          docker volume prune -f
