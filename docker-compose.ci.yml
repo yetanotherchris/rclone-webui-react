@@ -1,15 +1,39 @@
 # Docker Compose override for CI environments (GitHub Actions)
-# This file removes Docker socket dependencies that cause issues in CI
+# This file simplifies the LocalStack configuration for CI
 
 version: '3.8'
 
 services:
-  # Override localstack to remove Docker socket mount
+  # Override localstack for CI - simplified configuration
   localstack:
-    volumes:
-      - "./localstack-data:/tmp/localstack"
     environment:
       - SERVICES=s3
-      - DEBUG=1
-      - DATA_DIR=/tmp/localstack/data
-      # Remove DOCKER_HOST for CI
+      - DEBUG=0
+      - DISABLE_CORS_CHECKS=1
+      - SKIP_SSL_CERT_DOWNLOAD=1
+      - EAGER_SERVICE_LOADING=1
+    volumes: []
+    # Remove healthcheck to rely on manual checks in CI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  # Override init-s3 to have better waiting logic
+  init-s3:
+    depends_on:
+      localstack:
+        condition: service_healthy
+    command:
+      - -c
+      - |
+        echo "Waiting for localstack to be fully ready..."
+        sleep 10
+        echo "Creating S3 bucket..."
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://test-bucket || true
+        aws --endpoint-url=http://localstack:4566 s3api put-object --bucket test-bucket --key photos/ || true
+        aws --endpoint-url=http://localstack:4566 s3api put-object --bucket test-bucket --key documents/ || true
+        echo "S3 bucket initialized successfully"
+
