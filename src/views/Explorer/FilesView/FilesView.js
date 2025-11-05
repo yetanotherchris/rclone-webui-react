@@ -25,6 +25,7 @@ import ErrorBoundary from "../../../ErrorHandling/ErrorBoundary";
 import {createNewPublicLink, deleteFile, purgeDir} from "rclone-api";
 import {createSelector} from "reselect";
 import DropOverlay from "../../Base/DropOverlay/DropOverlay";
+import PhotoView from "./PhotoView";
 
 /*
 * Start code for react DND
@@ -337,7 +338,20 @@ class FilesView extends React.PureComponent {
 
             let renderElement = "";
 
-            if (gridMode === "card") {
+            if (gridMode === "photo") {
+                // Photo View Mode - Google Photos style
+                const {fsInfo} = this.props;
+                renderElement = (
+                    <div style={{ height: FILES_VIEW_HEIGHT }}>
+                        <PhotoView
+                            remoteName={remoteName}
+                            remotePath={this.props.currentPath.remotePath}
+                            fsInfo={fsInfo}
+                            downloadHandle={this.downloadHandle}
+                        />
+                    </div>
+                );
+            } else if (gridMode === "card") {
 
                 renderElement = (
 
