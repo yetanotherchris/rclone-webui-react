@@ -38,11 +38,25 @@ jobs:
       - name: Create test-data directory
         run: mkdir -p test-data
 
+      - name: Verify docker-compose configuration
+        run: |
+          echo "=== Validating docker-compose files ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml config
+          echo ""
+          echo "=== LocalStack service config ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml config | grep -A 20 "localstack:"
+
       - name: Build Docker images
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build --no-cache
 
       - name: Start Docker Compose services
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+        run: |
+          echo "Starting services..."
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d || {
+            echo "Failed to start services, showing logs:"
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+            exit 1
+          }
 
       - name: Show initial container status
         run: |
@@ -51,6 +65,9 @@ jobs:
           echo ""
           echo "=== LocalStack logs ==="
           docker compose -f docker-compose.yml -f docker-compose.ci.yml logs localstack
+          echo ""
+          echo "=== Checking if LocalStack container is running ==="
+          docker inspect rclone-webui-react-localstack-1 || echo "Container not found"
 
       - name: Wait for LocalStack to be ready
         run: |
