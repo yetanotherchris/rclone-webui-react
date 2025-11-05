@@ -1,0 +1,15 @@
+# Docker Compose override for CI environments (GitHub Actions)
+# This file removes Docker socket dependencies that cause issues in CI
+
+version: '3.8'
+
+services:
+  # Override localstack to remove Docker socket mount
+  localstack:
+    volumes:
+      - "./localstack-data:/tmp/localstack"
+    environment:
+      - SERVICES=s3
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      # Remove DOCKER_HOST for CI

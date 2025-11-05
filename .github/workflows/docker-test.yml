@@ -39,15 +39,15 @@ jobs:
         run: mkdir -p test-data
 
       - name: Build Docker images
-        run: docker compose build --no-cache
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build --no-cache
 
       - name: Start Docker Compose services
-        run: docker compose up -d
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
 
       - name: Wait for LocalStack to be ready
         run: |
           echo "Waiting for LocalStack to be healthy..."
-          timeout 60 bash -c 'until docker compose exec -T localstack curl -f http://localhost:4566/_localstack/health; do sleep 2; done'
+          timeout 60 bash -c 'until docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T localstack curl -f http://localhost:4566/_localstack/health; do sleep 2; done'
 
       - name: Wait for Rclone to be ready
         run: |
@@ -67,7 +67,7 @@ jobs:
       - name: Test S3 bucket creation
         run: |
           echo "Testing S3 bucket listing..."
-          docker compose run --rm -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test -e AWS_DEFAULT_REGION=us-east-1 \
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test -e AWS_DEFAULT_REGION=us-east-1 \
             init-s3 aws --endpoint-url=http://localstack:4566 s3 ls
 
       - name: Test WebUI accessibility
@@ -84,12 +84,12 @@ jobs:
       - name: Verify Docker containers are running
         run: |
           echo "Checking all containers are running..."
-          docker compose ps
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml ps
 
           # Check each service is running
           services=("localstack" "rclone" "webui")
           for service in "${services[@]}"; do
-            if docker compose ps "$service" | grep -q "Up"; then
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml ps "$service" | grep -q "Up"; then
               echo "✓ $service is running"
             else
               echo "✗ $service is not running"
@@ -101,13 +101,13 @@ jobs:
         if: failure()
         run: |
           echo "=== Docker Compose logs ==="
-          docker compose logs
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
           echo "=== Container status ==="
-          docker compose ps -a
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -a
 
       - name: Stop Docker Compose services
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
 
       - name: Clean up Docker resources
         if: always()
