@@ -1,0 +1,171 @@
+name: Docker Compose Test
+
+on:
+  pull_request:
+    branches:
+      - master
+      - main
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  docker-test:
+    name: Test Docker Compose Setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create rclone.conf for testing
+        run: |
+          cat > rclone.conf << 'EOF'
+          [s3-local]
+          type = s3
+          provider = Other
+          access_key_id = test
+          secret_access_key = test
+          endpoint = http://localstack:4566
+          force_path_style = true
+          EOF
+
+      - name: Create test-data directory
+        run: mkdir -p test-data
+
+      - name: Verify docker-compose configuration
+        run: |
+          echo "=== Validating docker-compose files ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml config
+          echo ""
+          echo "=== LocalStack service config ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml config | grep -A 20 "localstack:"
+
+      - name: Build Docker images
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build --no-cache
+
+      - name: Start Docker Compose services
+        run: |
+          echo "Starting services..."
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d || {
+            echo "Failed to start services, showing logs:"
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+            exit 1
+          }
+
+      - name: Show initial container status
+        run: |
+          echo "=== Container status after startup ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -a
+          echo ""
+          echo "=== LocalStack logs ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs localstack
+          echo ""
+          echo "=== Checking if LocalStack container is running ==="
+          docker inspect rclone-webui-react-localstack-1 || echo "Container not found"
+
+      - name: Wait for LocalStack to be ready
+        run: |
+          echo "Waiting for LocalStack to be healthy..."
+          for i in {1..30}; do
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T localstack curl -f http://localhost:4566/_localstack/health 2>/dev/null; then
+              echo "✓ LocalStack is healthy"
+              exit 0
+            fi
+            echo "Waiting for LocalStack... attempt $i/30"
+            sleep 2
+          done
+          echo "✗ LocalStack failed to become healthy"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs localstack
+          exit 1
+
+      - name: Wait for Rclone to be ready
+        run: |
+          echo "Waiting for Rclone daemon to be ready..."
+          for i in {1..30}; do
+            if curl -f -u admin:password http://localhost:5572/core/version 2>/dev/null; then
+              echo "✓ Rclone is ready"
+              exit 0
+            fi
+            echo "Waiting for Rclone... attempt $i/30"
+            sleep 2
+          done
+          echo "✗ Rclone failed to start"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs rclone
+          exit 1
+
+      - name: Wait for WebUI to be ready
+        run: |
+          echo "Waiting for WebUI to be ready..."
+          for i in {1..30}; do
+            if curl -f http://localhost:3000 2>/dev/null; then
+              echo "✓ WebUI is ready"
+              exit 0
+            fi
+            echo "Waiting for WebUI... attempt $i/30"
+            sleep 2
+          done
+          echo "✗ WebUI failed to start"
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs webui
+          exit 1
+
+      - name: Test Rclone API
+        run: |
+          echo "Testing Rclone API version endpoint..."
+          curl -f -u admin:password http://localhost:5572/core/version | jq .
+
+      - name: Test S3 bucket creation
+        run: |
+          echo "Testing S3 bucket listing..."
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml run --rm -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test -e AWS_DEFAULT_REGION=us-east-1 \
+            init-s3 aws --endpoint-url=http://localstack:4566 s3 ls
+
+      - name: Test WebUI accessibility
+        run: |
+          echo "Testing WebUI is serving content..."
+          response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000)
+          if [ "$response" = "200" ]; then
+            echo "✓ WebUI is accessible (HTTP $response)"
+          else
+            echo "✗ WebUI returned HTTP $response"
+            exit 1
+          fi
+
+      - name: Verify Docker containers are running
+        run: |
+          echo "Checking all containers are running..."
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml ps
+
+          # Check each service is running
+          services=("localstack" "rclone" "webui")
+          for service in "${services[@]}"; do
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml ps "$service" | grep -q "Up"; then
+              echo "✓ $service is running"
+            else
+              echo "✗ $service is not running"
+              exit 1
+            fi
+          done
+
+      - name: Show Docker logs on failure
+        if: failure()
+        run: |
+          echo "=== Docker Compose logs ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs
+          echo "=== Container status ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml ps -a
+
+      - name: Stop Docker Compose services
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
+
+      - name: Clean up Docker resources
+        if: always()
+        run: |
+          docker system prune -f
+          docker volume prune -f
