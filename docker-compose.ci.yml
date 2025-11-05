@@ -14,10 +14,13 @@ services:
       - SKIP_SSL_CERT_DOWNLOAD=1
       - EAGER_SERVICE_LOADING=1
       - LOCALSTACK_HOST=localhost:4566
-    # Don't use DATA_DIR to avoid directory cleanup issues
-    # Use tmpfs for LocalStack data to avoid volume mount conflicts
+      # Use different data directory to avoid volume mount conflict
+      - DATA_DIR=/var/lib/localstack
+    # Use tmpfs at /var/lib/localstack instead of /tmp/localstack
+    # This avoids conflict with the volume mount from base compose file
     tmpfs:
-      - /tmp/localstack
+      - /var/lib/localstack
+    # Keep volumes empty to avoid additional mounts
     volumes: []
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
