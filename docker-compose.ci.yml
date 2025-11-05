@@ -12,10 +12,12 @@ services:
       - SKIP_SSL_CERT_DOWNLOAD=1
       - EAGER_SERVICE_LOADING=1
       - LOCALSTACK_HOST=localhost:4566
-    # Override volume mount to use tmpfs (/dev/shm) instead of ./localstack-data
-    # This prevents "device busy" errors when LocalStack tries to clean /tmp/localstack
-    volumes:
-      - /dev/shm:/tmp/localstack
+    # Use tmpfs mount instead of volume to avoid "device busy" errors
+    # This creates an in-memory filesystem for LocalStack data
+    tmpfs:
+      - /tmp/localstack
+    # Remove the volume mount from base docker-compose.yml
+    volumes: []
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 5s
@@ -41,7 +43,7 @@ services:
             echo "LocalStack S3 is ready"
             break
           fi
-          echo "Waiting for LocalStack S3... attempt $i/30"
+          echo "Waiting for LocalStack S3... attempt $$i/30"
           sleep 2
         done
         echo "Creating S3 bucket..."
