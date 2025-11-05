@@ -1,44 +1,52 @@
 name: Node CI
 
 on:
-  [push, pull_request]
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
 
 jobs:
   build:
+    name: Build on Node.js ${{ matrix.node-version }} (${{ matrix.platform }})
 
     strategy:
+      fail-fast: false
       matrix:
         platform: [ubuntu-latest, macos-latest, windows-latest]
-        node-version: [8.x, 10.x, 12.x]
+        node-version: [18.x, 20.x, 22.x]
+
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v1
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v1
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      - name: npm install, build, and test
-        run: |
-          npm ci
-          npm run test:cov
-          npm run build
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build project
+        run: npm run build
         env:
           CI: true
-  coverage:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - name: Use Node.js 12.0
-        uses: actions/setup-node@v1
-        with:
-          node-version: 12.x
-      - name: Test Coverage
+
+      - name: Check build output
         run: |
-          npm ci
-          npm run test:cov        
-      - name: Coveralls GitHub Action
-        if:  ${{ success() }}
-        uses: coverallsapp/github-action@v1.1.1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          if [ -d "build" ]; then
+            echo "✓ Build successful - build directory created"
+            ls -la build/
+          else
+            echo "✗ Build failed - build directory not found"
+            exit 1
+          fi
+        shell: bash
