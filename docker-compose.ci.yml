@@ -14,6 +14,10 @@ services:
       - SKIP_SSL_CERT_DOWNLOAD=1
       - EAGER_SERVICE_LOADING=1
       - LOCALSTACK_HOST=localhost:4566
+    # Don't use DATA_DIR to avoid directory cleanup issues
+    # Use tmpfs for LocalStack data to avoid volume mount conflicts
+    tmpfs:
+      - /tmp/localstack
     volumes: []
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
