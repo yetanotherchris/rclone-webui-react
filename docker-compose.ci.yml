@@ -12,13 +12,10 @@ services:
       - SKIP_SSL_CERT_DOWNLOAD=1
       - EAGER_SERVICE_LOADING=1
       - LOCALSTACK_HOST=localhost:4566
-    # Use tmpfs mount instead of volume to avoid "device busy" errors
-    # This creates an in-memory filesystem for LocalStack data
-    tmpfs:
-      - /tmp/localstack
-    # Keep only the Docker socket, remove the localstack-data volume
-    volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
+      # Don't set DATA_DIR - let LocalStack use its default ephemeral storage
+    # Don't mount tmpfs or volumes - let LocalStack use container's ephemeral storage
+    # This avoids "device busy" errors when LocalStack tries to clean up
+    volumes: []
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 5s
