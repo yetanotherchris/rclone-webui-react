@@ -16,12 +16,55 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    services:
+      localstack:
+        image: localstack/localstack:3.0.2
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: s3
+          DEBUG: 0
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/_localstack/health || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install
+
+      - name: Configure AWS credentials for LocalStack
+        run: |
+          aws configure set aws_access_key_id test
+          aws configure set aws_secret_access_key test
+          aws configure set default.region us-east-1
+
+      - name: Wait for LocalStack and create S3 bucket
+        run: |
+          echo "Waiting for LocalStack to be ready..."
+          for i in {1..30}; do
+            if curl -f http://localhost:4566/_localstack/health 2>/dev/null; then
+              echo "✓ LocalStack is healthy"
+              break
+            fi
+            echo "Waiting... attempt $i/30"
+            sleep 2
+          done
+
+          echo "Creating S3 bucket..."
+          aws --endpoint-url=http://localhost:4566 s3 mb s3://test-bucket
+          aws --endpoint-url=http://localhost:4566 s3 ls
+          echo "✓ S3 bucket created successfully"
 
       - name: Create rclone.conf for testing
         run: |
@@ -31,141 +74,92 @@ jobs:
           provider = Other
           access_key_id = test
           secret_access_key = test
-          endpoint = http://localstack:4566
+          endpoint = http://localhost:4566
           force_path_style = true
           EOF
 
       - name: Create test-data directory
         run: mkdir -p test-data
 
-      - name: Verify docker-compose configuration
+      - name: Start Rclone daemon in background
         run: |
-          echo "=== Validating docker-compose file ==="
-          docker compose -f docker-compose.test.yml config
-          echo ""
-          echo "=== LocalStack service config ==="
-          docker compose -f docker-compose.test.yml config | grep -A 20 "localstack:"
-
-      - name: Build Docker images
-        run: docker compose -f docker-compose.test.yml build --no-cache
-
-      - name: Start Docker Compose services
-        run: |
-          echo "Starting services..."
-          docker compose -f docker-compose.test.yml up -d || {
-            echo "Failed to start services, showing logs:"
-            docker compose -f docker-compose.test.yml logs
-            exit 1
-          }
-
-      - name: Show initial container status
-        run: |
-          echo "=== Container status after startup ==="
-          docker compose -f docker-compose.test.yml ps -a
-          echo ""
-          echo "=== LocalStack logs ==="
-          docker compose -f docker-compose.test.yml logs localstack
-          echo ""
-          echo "=== Checking if LocalStack container is running ==="
-          docker inspect localstack-test || echo "Container not found"
-
-      - name: Wait for LocalStack to be ready
-        run: |
-          echo "Waiting for LocalStack to be healthy..."
-          for i in {1..30}; do
-            if docker compose -f docker-compose.test.yml exec -T localstack curl -f http://localhost:4566/_localstack/health 2>/dev/null; then
-              echo "✓ LocalStack is healthy"
-              exit 0
-            fi
-            echo "Waiting for LocalStack... attempt $i/30"
-            sleep 2
-          done
-          echo "✗ LocalStack failed to become healthy"
-          docker compose -f docker-compose.test.yml logs localstack
-          exit 1
+          docker run -d \
+            --name rclone-daemon \
+            --network host \
+            -v $(pwd)/rclone.conf:/config/rclone/rclone.conf:ro \
+            -v $(pwd)/test-data:/data \
+            -e RCLONE_CONFIG=/config/rclone/rclone.conf \
+            rclone/rclone:latest \
+            rcd --rc-addr :5572 --rc-user admin --rc-pass password --rc-allow-origin "*" --log-level INFO
 
       - name: Wait for Rclone to be ready
         run: |
-          echo "Waiting for Rclone daemon to be ready..."
+          echo "Waiting for Rclone daemon..."
           for i in {1..30}; do
             if curl -f -u admin:password http://localhost:5572/core/version 2>/dev/null; then
               echo "✓ Rclone is ready"
               exit 0
             fi
-            echo "Waiting for Rclone... attempt $i/30"
+            echo "Waiting... attempt $i/30"
             sleep 2
           done
           echo "✗ Rclone failed to start"
-          docker compose -f docker-compose.test.yml logs rclone
+          docker logs rclone-daemon
           exit 1
+
+      - name: Test Rclone API
+        run: |
+          echo "Testing Rclone API..."
+          curl -u admin:password http://localhost:5572/core/version | jq .
+
+      - name: Build WebUI Docker image
+        run: docker build -t rclone-webui:test .
+
+      - name: Start WebUI container
+        run: |
+          docker run -d \
+            --name rclone-webui \
+            --network host \
+            -e RCLONE_URL=http://localhost:5572 \
+            rclone-webui:test
 
       - name: Wait for WebUI to be ready
         run: |
-          echo "Waiting for WebUI to be ready..."
+          echo "Waiting for WebUI..."
           for i in {1..30}; do
             if curl -f http://localhost:3000 2>/dev/null; then
               echo "✓ WebUI is ready"
               exit 0
             fi
-            echo "Waiting for WebUI... attempt $i/30"
+            echo "Waiting... attempt $i/30"
             sleep 2
           done
           echo "✗ WebUI failed to start"
-          docker compose -f docker-compose.test.yml logs webui
+          docker logs rclone-webui
           exit 1
-
-      - name: Test Rclone API
-        run: |
-          echo "Testing Rclone API version endpoint..."
-          curl -f -u admin:password http://localhost:5572/core/version | jq .
-
-      - name: Test S3 bucket creation
-        run: |
-          echo "Testing S3 bucket listing..."
-          docker compose -f docker-compose.test.yml run --rm -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test -e AWS_DEFAULT_REGION=us-east-1 \
-            init-s3 aws --endpoint-url=http://localstack:4566 s3 ls
 
       - name: Test WebUI accessibility
         run: |
-          echo "Testing WebUI is serving content..."
           response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000)
+          echo "WebUI returned HTTP $response"
           if [ "$response" = "200" ]; then
-            echo "✓ WebUI is accessible (HTTP $response)"
+            echo "✓ WebUI is accessible"
           else
-            echo "✗ WebUI returned HTTP $response"
+            echo "✗ WebUI check failed"
             exit 1
           fi
 
-      - name: Verify Docker containers are running
-        run: |
-          echo "Checking all containers are running..."
-          docker compose -f docker-compose.test.yml ps
-
-          # Check each service is running
-          services=("localstack" "rclone" "webui")
-          for service in "${services[@]}"; do
-            if docker compose -f docker-compose.test.yml ps "$service" | grep -q "Up"; then
-              echo "✓ $service is running"
-            else
-              echo "✗ $service is not running"
-              exit 1
-            fi
-          done
-
-      - name: Show Docker logs on failure
+      - name: Show logs on failure
         if: failure()
         run: |
-          echo "=== Docker Compose logs ==="
-          docker compose -f docker-compose.test.yml logs
-          echo "=== Container status ==="
-          docker compose -f docker-compose.test.yml ps -a
+          echo "=== Rclone logs ==="
+          docker logs rclone-daemon || true
+          echo ""
+          echo "=== WebUI logs ==="
+          docker logs rclone-webui || true
 
-      - name: Stop Docker Compose services
-        if: always()
-        run: docker compose -f docker-compose.test.yml down -v
-
-      - name: Clean up Docker resources
+      - name: Clean up containers
         if: always()
         run: |
-          docker system prune -f
-          docker volume prune -f
+          docker stop rclone-daemon rclone-webui || true
+          docker rm rclone-daemon rclone-webui || true
