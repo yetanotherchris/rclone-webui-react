@@ -94,9 +94,9 @@ jobs:
             -v $(pwd)/test-data:/data \
             -e RCLONE_CONFIG=/config/rclone/rclone.conf \
             rclone/rclone:latest \
-            rcd --rc-addr :5572 --rc-user admin --rc-pass password --rc-allow-origin "*" --log-level DEBUG
+            rcd --rc-addr 0.0.0.0:5572 --rc-user admin --rc-pass password --rc-allow-origin "*" --log-level INFO
 
-          echo "Rclone container started, waiting a few seconds..."
+          echo "Rclone container started, waiting for daemon to be ready..."
           sleep 5
           echo "=== Checking if container is running ==="
           docker ps -a | grep rclone-daemon
@@ -105,29 +105,26 @@ jobs:
 
       - name: Wait for Rclone to be ready
         run: |
-          echo "Waiting for Rclone daemon to respond..."
+          echo "Waiting for Rclone daemon to respond on http://localhost:5572..."
           for i in {1..30}; do
-            echo "Attempt $i/30 - Testing connection..."
-            if curl -v -u admin:password http://localhost:5572/core/version 2>&1 | tee curl_output.txt | grep -q "200\|HTTP"; then
-              echo "✓ Rclone is responding"
-              curl -u admin:password http://localhost:5572/core/version
+            if curl -f -X POST -u admin:password http://localhost:5572/core/version 2>/dev/null; then
+              echo "✓ Rclone is ready"
               exit 0
             fi
-            echo "Connection failed, checking container status..."
-            docker ps -a | grep rclone-daemon || echo "Container not found!"
-            sleep 3
+            echo "Waiting... attempt $i/30"
+            sleep 2
           done
           echo "✗ Rclone failed to become ready"
           echo "=== Final rclone logs ==="
           docker logs rclone-daemon
-          echo "=== Container inspect ==="
-          docker inspect rclone-daemon
           exit 1
 
       - name: Test Rclone API
         run: |
-          echo "Testing Rclone API..."
-          curl -u admin:password http://localhost:5572/core/version | jq .
+          echo "Testing Rclone API with POST request..."
+          response=$(curl -s -X POST -u admin:password http://localhost:5572/core/version)
+          echo "Response: $response"
+          echo "$response" | jq .
 
       - name: Build WebUI Docker image
         run: docker build -t rclone-webui:test .
