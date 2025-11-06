@@ -16,8 +16,9 @@ services:
     # This creates an in-memory filesystem for LocalStack data
     tmpfs:
       - /tmp/localstack
-    # Remove the volume mount from base docker-compose.yml
-    volumes: []
+    # Keep only the Docker socket, remove the localstack-data volume
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
       interval: 5s
