@@ -1,0 +1,76 @@
+# Standalone Docker Compose for CI/CD testing
+# This is a simplified version that doesn't rely on the base docker-compose.yml
+
+services:
+  # LocalStack - Mock AWS S3 for testing
+  localstack:
+    container_name: localstack-test
+    image: localstack/localstack:3.0.2
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+      - DISABLE_CORS_CHECKS=1
+      - SKIP_SSL_CERT_DOWNLOAD=1
+      - EAGER_SERVICE_LOADING=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  # Initialize S3 bucket with sample data
+  init-s3:
+    image: amazon/aws-cli:latest
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "Waiting for LocalStack S3 to be ready..."
+        sleep 2
+        echo "Creating S3 bucket..."
+        aws --endpoint-url=http://localstack:4566 s3 mb s3://test-bucket || true
+        aws --endpoint-url=http://localstack:4566 s3api put-object --bucket test-bucket --key photos/ || true
+        aws --endpoint-url=http://localstack:4566 s3api put-object --bucket test-bucket --key documents/ || true
+        echo "S3 bucket initialized successfully"
+
+  # Rclone daemon
+  rclone:
+    image: rclone/rclone:latest
+    depends_on:
+      init-s3:
+        condition: service_completed_successfully
+    ports:
+      - "5572:5572"
+    volumes:
+      - "./rclone.conf:/config/rclone/rclone.conf:ro"
+      - "./test-data:/data"
+    command: >
+      rcd
+      --rc-addr :5572
+      --rc-user admin
+      --rc-pass password
+      --rc-allow-origin "*"
+      --log-level INFO
+    environment:
+      - RCLONE_CONFIG=/config/rclone/rclone.conf
+
+  # Rclone WebUI (this project)
+  webui:
+    build: .
+    ports:
+      - "3000:80"
+    depends_on:
+      rclone:
+        condition: service_started
+    environment:
+      - RCLONE_URL=http://rclone:5572

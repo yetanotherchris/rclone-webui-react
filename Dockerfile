@@ -18,7 +18,7 @@ RUN npm run build
 # Production stage
 FROM nginx:alpine
 
-# Copy built assets from builder stage
+# Copy built assets from builder stage (Vite configured to output to build/)
 COPY --from=builder /app/build /usr/share/nginx/html
 
 # Copy nginx configuration for SPA routing
