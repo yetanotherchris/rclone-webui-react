@@ -87,7 +87,7 @@ jobs:
       - name: Start Rclone daemon in background
         run: |
           docker run -d \
-            --name rclone-daemon \
+            --name rclone \
             --network rclone-test-network \
             -p 5572:5572 \
             -v $(pwd)/rclone.conf:/config/rclone/rclone.conf:ro \
@@ -99,9 +99,9 @@ jobs:
           echo "Rclone container started, waiting for daemon to be ready..."
           sleep 5
           echo "=== Checking if container is running ==="
-          docker ps -a | grep rclone-daemon
+          docker ps -a | grep rclone
           echo "=== Initial rclone logs ==="
-          docker logs rclone-daemon
+          docker logs rclone
 
       - name: Wait for Rclone to be ready
         run: |
@@ -116,7 +116,7 @@ jobs:
           done
           echo "✗ Rclone failed to become ready"
           echo "=== Final rclone logs ==="
-          docker logs rclone-daemon
+          docker logs rclone
           exit 1
 
       - name: Test Rclone API
@@ -139,7 +139,7 @@ jobs:
             --name rclone-webui \
             --network rclone-test-network \
             -p 3000:80 \
-            -e RCLONE_URL=http://rclone-daemon:5572 \
+            -e RCLONE_URL=http://rclone:5572 \
             rclone-webui:test
 
           echo "Waiting 10 seconds for nginx to start..."
@@ -181,7 +181,7 @@ jobs:
         if: failure()
         run: |
           echo "=== Rclone logs ==="
-          docker logs rclone-daemon || true
+          docker logs rclone || true
           echo ""
           echo "=== WebUI logs ==="
           docker logs rclone-webui || true
@@ -189,5 +189,5 @@ jobs:
       - name: Clean up containers
         if: always()
         run: |
-          docker stop rclone-daemon rclone-webui || true
-          docker rm rclone-daemon rclone-webui || true
+          docker stop rclone rclone-webui || true
+          docker rm rclone rclone-webui || true
