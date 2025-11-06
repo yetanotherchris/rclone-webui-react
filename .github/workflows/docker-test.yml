@@ -94,21 +94,34 @@ jobs:
             -v $(pwd)/test-data:/data \
             -e RCLONE_CONFIG=/config/rclone/rclone.conf \
             rclone/rclone:latest \
-            rcd --rc-addr :5572 --rc-user admin --rc-pass password --rc-allow-origin "*" --log-level INFO
+            rcd --rc-addr :5572 --rc-user admin --rc-pass password --rc-allow-origin "*" --log-level DEBUG
+
+          echo "Rclone container started, waiting a few seconds..."
+          sleep 5
+          echo "=== Checking if container is running ==="
+          docker ps -a | grep rclone-daemon
+          echo "=== Initial rclone logs ==="
+          docker logs rclone-daemon
 
       - name: Wait for Rclone to be ready
         run: |
-          echo "Waiting for Rclone daemon..."
+          echo "Waiting for Rclone daemon to respond..."
           for i in {1..30}; do
-            if curl -f -u admin:password http://localhost:5572/core/version 2>/dev/null; then
-              echo "✓ Rclone is ready"
+            echo "Attempt $i/30 - Testing connection..."
+            if curl -v -u admin:password http://localhost:5572/core/version 2>&1 | tee curl_output.txt | grep -q "200\|HTTP"; then
+              echo "✓ Rclone is responding"
+              curl -u admin:password http://localhost:5572/core/version
               exit 0
             fi
-            echo "Waiting... attempt $i/30"
-            sleep 2
+            echo "Connection failed, checking container status..."
+            docker ps -a | grep rclone-daemon || echo "Container not found!"
+            sleep 3
           done
-          echo "✗ Rclone failed to start"
+          echo "✗ Rclone failed to become ready"
+          echo "=== Final rclone logs ==="
           docker logs rclone-daemon
+          echo "=== Container inspect ==="
+          docker inspect rclone-daemon
           exit 1
 
       - name: Test Rclone API
