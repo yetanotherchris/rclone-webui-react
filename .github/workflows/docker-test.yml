@@ -68,7 +68,7 @@ jobs:
           provider = Other
           access_key_id = test
           secret_access_key = test
-          endpoint = http://localhost:4566
+          endpoint = http://localstack:4566
           force_path_style = true
           EOF
 
