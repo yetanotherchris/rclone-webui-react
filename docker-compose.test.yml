@@ -70,6 +70,7 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - rclone
+      rclone:
+        condition: service_started
     environment:
       - RCLONE_URL=http://rclone:5572
