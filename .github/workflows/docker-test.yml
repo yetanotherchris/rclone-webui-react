@@ -75,11 +75,21 @@ jobs:
       - name: Create test-data directory
         run: mkdir -p test-data
 
+      - name: Create Docker network
+        run: docker network create rclone-test-network
+
+      - name: Connect LocalStack service to network
+        run: |
+          # Get the LocalStack container ID
+          LOCALSTACK_CONTAINER=$(docker ps --filter "ancestor=localstack/localstack:3.0.2" -q)
+          docker network connect rclone-test-network $LOCALSTACK_CONTAINER
+
       - name: Start Rclone daemon in background
         run: |
           docker run -d \
             --name rclone-daemon \
-            --network host \
+            --network rclone-test-network \
+            -p 5572:5572 \
             -v $(pwd)/rclone.conf:/config/rclone/rclone.conf:ro \
             -v $(pwd)/test-data:/data \
             -e RCLONE_CONFIG=/config/rclone/rclone.conf \
@@ -113,8 +123,9 @@ jobs:
         run: |
           docker run -d \
             --name rclone-webui \
-            --network host \
-            -e RCLONE_URL=http://localhost:5572 \
+            --network rclone-test-network \
+            -p 3000:80 \
+            -e RCLONE_URL=http://rclone-daemon:5572 \
             rclone-webui:test
 
       - name: Wait for WebUI to be ready
