@@ -47,8 +47,8 @@ services:
   rclone:
     image: rclone/rclone:latest
     depends_on:
-      localstack:
-        condition: service_healthy
+      init-s3:
+        condition: service_completed_successfully
     ports:
       - "5572:5572"
     volumes:
@@ -56,12 +56,11 @@ services:
       - "./test-data:/data"
     command: >
       rcd
-      --rc-web-gui
-      --rc-web-gui-no-open-browser
       --rc-addr :5572
       --rc-user admin
       --rc-pass password
       --rc-allow-origin "*"
+      --log-level INFO
     environment:
       - RCLONE_CONFIG=/config/rclone/rclone.conf
 
