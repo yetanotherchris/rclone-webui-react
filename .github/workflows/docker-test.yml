@@ -127,10 +127,14 @@ jobs:
           echo "$response" | jq .
 
       - name: Build WebUI Docker image
-        run: docker build -t rclone-webui:test .
+        run: |
+          echo "Building WebUI Docker image..."
+          docker build -t rclone-webui:test .
+          echo "✓ Build completed"
 
       - name: Start WebUI container
         run: |
+          echo "Starting WebUI container..."
           docker run -d \
             --name rclone-webui \
             --network rclone-test-network \
@@ -138,18 +142,27 @@ jobs:
             -e RCLONE_URL=http://rclone-daemon:5572 \
             rclone-webui:test
 
+          echo "Waiting 10 seconds for nginx to start..."
+          sleep 10
+          echo "=== WebUI container status ==="
+          docker ps -a | grep rclone-webui
+          echo "=== Initial WebUI logs ==="
+          docker logs rclone-webui
+
       - name: Wait for WebUI to be ready
         run: |
-          echo "Waiting for WebUI..."
-          for i in {1..30}; do
-            if curl -f http://localhost:3000 2>/dev/null; then
-              echo "✓ WebUI is ready"
+          echo "Testing WebUI accessibility at http://localhost:3000..."
+          for i in {1..20}; do
+            echo "Attempt $i/20..."
+            if curl -v http://localhost:3000 2>&1 | grep -q "200\|HTTP"; then
+              echo "✓ WebUI is accessible"
+              curl -s http://localhost:3000 | head -20
               exit 0
             fi
-            echo "Waiting... attempt $i/30"
-            sleep 2
+            docker ps -a | grep rclone-webui || echo "Container stopped!"
+            sleep 3
           done
-          echo "✗ WebUI failed to start"
+          echo "✗ WebUI failed to become ready"
           docker logs rclone-webui
           exit 1
 
